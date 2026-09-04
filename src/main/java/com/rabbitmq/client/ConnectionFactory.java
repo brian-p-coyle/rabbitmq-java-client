@@ -29,6 +29,7 @@ import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.EventLoopGroup;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -38,6 +39,7 @@ import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.UnrecoverableKeyException;
+import java.security.cert.CertificateException;
 import java.time.Duration;
 import java.util.*;
 import java.util.Map.Entry;
@@ -854,19 +856,31 @@ public class ConnectionFactory implements Cloneable {
   public void useSslProtocol(String protocol)
       throws NoSuchAlgorithmException, KeyManagementException {
     try {
-      // If the TLS connection requires Client auth (mTLS), then we need to be able to open
-      // our key, we're assuming that the key is in the JVM default keystore (hence init with 
-      // null,null)
       KeyManagerFactory kmf =
           KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
-      kmf.init(null, null);
+      // On IBM Semeru 17, SunX509.init(null, null) does not read javax.net.ssl.keyStore system
+      // properties — it returns zero key managers regardless, causing mTLS to fail with an empty
+      // Certificate message. Explicitly load the keystore from system properties when present.
+      // Falls back to init(null, null) for non-mTLS (server-auth-only) connections.
+      String ksPath = System.getProperty("javax.net.ssl.keyStore");
+      if (ksPath != null) {
+        String ksPass = System.getProperty("javax.net.ssl.keyStorePassword", "");
+        String ksType = System.getProperty("javax.net.ssl.keyStoreType", KeyStore.getDefaultType());
+        KeyStore ks = KeyStore.getInstance(ksType);
+        try (FileInputStream in = new FileInputStream(ksPath)) {
+          ks.load(in, ksPass.toCharArray());
+        }
+        kmf.init(ks, ksPass.toCharArray());
+      } else {
+        kmf.init(null, null);
+      }
       TrustManagerFactory tmf =
           TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
       tmf.init((KeyStore) null);
       SSLContext c = SSLContext.getInstance(protocol);
       c.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);
       this.useSslProtocol(c);
-    } catch (KeyStoreException | UnrecoverableKeyException e) {
+    } catch (KeyStoreException | UnrecoverableKeyException | IOException | CertificateException e) {
       throw new KeyManagementException("Failed to initialize default key/trust manager", e);
     }
   }
