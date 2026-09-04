@@ -37,6 +37,7 @@ import java.security.KeyManagementException;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
+import java.security.UnrecoverableKeyException;
 import java.time.Duration;
 import java.util.*;
 import java.util.Map.Entry;
@@ -48,6 +49,7 @@ import java.util.function.Predicate;
 import javax.net.SocketFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSocketFactory;
+import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.TrustManagerFactory;
 import org.slf4j.Logger;
@@ -852,14 +854,20 @@ public class ConnectionFactory implements Cloneable {
   public void useSslProtocol(String protocol)
       throws NoSuchAlgorithmException, KeyManagementException {
     try {
+      // If the TLS connection requires Client auth (mTLS), then we need to be able to open
+      // our key, we're assuming that the key is in the JVM default keystore (hence init with 
+      // null,null)
+      KeyManagerFactory kmf =
+          KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+      kmf.init(null, null);
       TrustManagerFactory tmf =
           TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
       tmf.init((KeyStore) null);
       SSLContext c = SSLContext.getInstance(protocol);
-      c.init(null, tmf.getTrustManagers(), null);
+      c.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);
       this.useSslProtocol(c);
-    } catch (KeyStoreException e) {
-      throw new KeyManagementException("Failed to initialize default trust manager", e);
+    } catch (KeyStoreException | UnrecoverableKeyException e) {
+      throw new KeyManagementException("Failed to initialize default key/trust manager", e);
     }
   }
 

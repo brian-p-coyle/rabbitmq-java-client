@@ -36,6 +36,7 @@ import java.security.KeyManagementException;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
+import java.security.UnrecoverableKeyException;
 import java.security.cert.CertificateException;
 import java.util.Arrays;
 import java.util.Collections;
@@ -405,7 +406,7 @@ public class ConnectionFactoryConfigurator {
         return trustManagers;
     }
 
-    private static void setUpBasicSsl(ConnectionFactory cf, boolean validateServerCertificate, boolean verifyHostname, String sslAlgorithm) throws KeyManagementException, NoSuchAlgorithmException, KeyStoreException {
+    private static void setUpBasicSsl(ConnectionFactory cf, boolean validateServerCertificate, boolean verifyHostname, String sslAlgorithm) throws KeyManagementException, NoSuchAlgorithmException, KeyStoreException, UnrecoverableKeyException {
         if (validateServerCertificate) {
             useDefaultTrustStore(cf, sslAlgorithm, verifyHostname);
         } else {
@@ -418,12 +419,14 @@ public class ConnectionFactoryConfigurator {
         }
     }
 
-    private static void useDefaultTrustStore(ConnectionFactory cf, String sslAlgorithm, boolean verifyHostname) throws NoSuchAlgorithmException, KeyStoreException, KeyManagementException {
+    private static void useDefaultTrustStore(ConnectionFactory cf, String sslAlgorithm, boolean verifyHostname) throws NoSuchAlgorithmException, KeyStoreException, KeyManagementException, UnrecoverableKeyException {
+        KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+        kmf.init(null, null);
         SSLContext sslContext = SSLContext.getInstance(sslAlgorithm);
         TrustManagerFactory trustManagerFactory =
                 TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
         trustManagerFactory.init((KeyStore) null);
-        sslContext.init(null, trustManagerFactory.getTrustManagers(), null);
+        sslContext.init(kmf.getKeyManagers(), trustManagerFactory.getTrustManagers(), null);
         cf.useSslProtocol(sslContext);
         if (verifyHostname) {
             cf.enableHostnameVerification();
