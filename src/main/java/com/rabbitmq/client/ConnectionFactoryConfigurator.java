@@ -406,7 +406,8 @@ public class ConnectionFactoryConfigurator {
         return trustManagers;
     }
 
-    private static void setUpBasicSsl(ConnectionFactory cf, boolean validateServerCertificate, boolean verifyHostname, String sslAlgorithm) throws KeyManagementException, NoSuchAlgorithmException, KeyStoreException, UnrecoverableKeyException {
+    private static void setUpBasicSsl(ConnectionFactory cf, boolean validateServerCertificate, boolean verifyHostname, String sslAlgorithm)
+            throws KeyManagementException, NoSuchAlgorithmException, KeyStoreException, UnrecoverableKeyException, IOException, CertificateException {
         if (validateServerCertificate) {
             useDefaultTrustStore(cf, sslAlgorithm, verifyHostname);
         } else {
@@ -423,10 +424,10 @@ public class ConnectionFactoryConfigurator {
             throws NoSuchAlgorithmException, KeyStoreException, KeyManagementException, UnrecoverableKeyException, IOException, CertificateException {
         KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
 
-        // Fix for Java 17 (IBM Semeru SunX509): kmf.init(null, null) installs a DummyX509KeyManager
-        // that presents no client certificate, breaking mTLS. Read javax.net.ssl.keyStore system
-        // properties explicitly so a real KeyManager is installed when a keystore is configured.
-        // See: JDK-8292574 | IBM Support Case TS022848060
+        // On Java 17 (SunX509), kmf.init(null, null) installs a DummyX509KeyManager that holds no
+        // certificates, causing mTLS to fail with an empty client certificate message. Read the
+        // javax.net.ssl.keyStore system properties explicitly to load a real KeyManager when a
+        // keystore is configured. See: JDK-8292574
         String ksPath = System.getProperty("javax.net.ssl.keyStore");
         if (ksPath != null) {
             String ksPass = System.getProperty("javax.net.ssl.keyStorePassword", "");
