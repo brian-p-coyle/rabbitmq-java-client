@@ -419,9 +419,27 @@ public class ConnectionFactoryConfigurator {
         }
     }
 
-    private static void useDefaultTrustStore(ConnectionFactory cf, String sslAlgorithm, boolean verifyHostname) throws NoSuchAlgorithmException, KeyStoreException, KeyManagementException, UnrecoverableKeyException {
+    private static void useDefaultTrustStore(ConnectionFactory cf, String sslAlgorithm, boolean verifyHostname)
+            throws NoSuchAlgorithmException, KeyStoreException, KeyManagementException, UnrecoverableKeyException, IOException, CertificateException {
         KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
-        kmf.init(null, null);
+
+        // Fix for Java 17 (IBM Semeru SunX509): kmf.init(null, null) installs a DummyX509KeyManager
+        // that presents no client certificate, breaking mTLS. Read javax.net.ssl.keyStore system
+        // properties explicitly so a real KeyManager is installed when a keystore is configured.
+        // See: JDK-8292574 | IBM Support Case TS022848060
+        String ksPath = System.getProperty("javax.net.ssl.keyStore");
+        if (ksPath != null) {
+            String ksPass = System.getProperty("javax.net.ssl.keyStorePassword", "");
+            String ksType = System.getProperty("javax.net.ssl.keyStoreType", KeyStore.getDefaultType());
+            KeyStore ks = KeyStore.getInstance(ksType);
+            try (FileInputStream in = new FileInputStream(ksPath)) {
+                ks.load(in, ksPass.toCharArray());
+            }
+            kmf.init(ks, ksPass.toCharArray());
+        } else {
+            kmf.init(null, null);
+        }
+
         SSLContext sslContext = SSLContext.getInstance(sslAlgorithm);
         TrustManagerFactory trustManagerFactory =
                 TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
